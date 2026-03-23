@@ -1,190 +1,140 @@
-import { NextRequest, NextResponse } from "next/server";
-import { dbConnect } from "@/lib/mongodb";
-import { getSessionFromRequest } from "@/lib/auth";
-import { deleteFileFromAzure } from "@/lib/azure";
+import { NextResponse } from "next/server";
+import { mongoColl } from "@/lib/mongo-collections";
+import { getSession } from "@/lib/auth";
+import { deleteAzureBlobIfExists } from "@/lib/azure-storage";
+import { getDb } from "@/lib/mongodb";
+import { toObjectId } from "@/lib/object-id";
+
+const RUC_RE = /^\d{13}$/;
 
 export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  _request: Request,
+  { params }: { params: { id: string } }
 ) {
-  try {
-    const session = await getSessionFromRequest(req);
-    if (!session) {
-      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    }
-
-    const { id } = await params;
-    await dbConnect();
-    const { default: Provider } = await import("@/models/Provider");
-    const Doc = (await import("@/models/Document")).default;
-
-    const provider = await Provider.findById(id);
-    if (!provider) {
-      return NextResponse.json(
-        { error: "Proveedor no encontrado" },
-        { status: 404 }
-      );
-    }
-
-    const documents = await Doc.find({ providerId: id }).sort({ createdAt: -1 });
-
-    const statsAgg = await Doc.aggregate([
-      { $match: { providerId: provider._id } },
-      {
-        $group: {
-          _id: null,
-          pending: { $sum: { $cond: [{ $eq: ["$status", "PENDING"] }, 1, 0] } },
-          uploaded: { $sum: { $cond: [{ $eq: ["$status", "UPLOADED"] }, 1, 0] } },
-          approved: { $sum: { $cond: [{ $eq: ["$status", "APPROVED"] }, 1, 0] } },
-          rejected: { $sum: { $cond: [{ $eq: ["$status", "REJECTED"] }, 1, 0] } },
-          total: { $sum: 1 },
-        },
-      },
-    ]);
-
-    const stats = statsAgg[0] || {
-      pending: 0,
-      uploaded: 0,
-      approved: 0,
-      rejected: 0,
-      total: 0,
-    };
-
-    return NextResponse.json({
-      provider: {
-        _id: provider._id.toString(),
-        name: provider.name,
-        ruc: provider.ruc,
-        email: provider.email || null,
-        phone: provider.phone || null,
-        createdAt: provider.createdAt,
-        updatedAt: provider.updatedAt,
-      },
-      documents: documents.map((d) => ({
-        _id: d._id.toString(),
-        providerId: d.providerId.toString(),
-        documentType: d.documentType,
-        year: d.year,
-        description: d.description,
-        status: d.status,
-        fileUrl: d.fileUrl || null,
-        fileName: d.fileName || null,
-        blobName: d.blobName || null,
-        observations: d.observations || null,
-        deadline: d.deadline || null,
-        createdAt: d.createdAt,
-        updatedAt: d.updatedAt,
-      })),
-      stats: {
-        pending: stats.pending,
-        uploaded: stats.uploaded,
-        approved: stats.approved,
-        rejected: stats.rejected,
-        total: stats.total,
-      },
-    });
-  } catch (error) {
-    console.error("Error en GET /api/providers/[id]:", error);
-    return NextResponse.json(
-      { error: "Error interno del servidor" },
-      { status: 500 }
-    );
+  const session = await getSession();
+  if (!session || (session.role !== "empresa" && session.role !== "admin")) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
+  const oid = toObjectId(params.id);
+  if (!oid) {
+    return NextResponse.json({ error: "ID inválido" }, { status: 400 });
+  }
+  const db = await getDb();
+  const p = await db.collection(mongoColl.providers).findOne({ _id: oid });
+  if (!p) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
+  return NextResponse.json({
+    provider: {
+      id: String(p._id),
+      name: p.name,
+      ruc: p.ruc,
+      email: p.email ?? null,
+      phone: p.phone ?? null,
+    },
+  });
 }
 
 export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  request: Request,
+  { params }: { params: { id: string } }
 ) {
-  try {
-    const session = await getSessionFromRequest(req);
-    if (!session || (session.role !== "ADMIN" && session.role !== "EMPRESA")) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
+  const session = await getSession();
+  if (!session || session.role !== "admin") {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+  }
+  const oid = toObjectId(params.id);
+  if (!oid) {
+    return NextResponse.json({ error: "ID inválido" }, { status: 400 });
+  }
+  const body = await request.json().catch(() => null);
+  const name = typeof body?.name === "string" ? body.name.trim() : undefined;
+  const ruc = typeof body?.ruc === "string" ? body.ruc.trim() : undefined;
+  const email =
+    body?.email === null
+      ? null
+      : typeof body?.email === "string"
+        ? body.email.trim() || null
+        : undefined;
+  const phone =
+    body?.phone === null
+      ? null
+      : typeof body?.phone === "string"
+        ? body.phone.trim() || null
+        : undefined;
 
-    const { id } = await params;
-    await dbConnect();
-    const { default: Provider } = await import("@/models/Provider");
-
-    const body = await req.json();
-    const { name, email, phone } = body;
-
-    const provider = await Provider.findByIdAndUpdate(
-      id,
-      { name, email, phone },
-      { new: true }
-    );
-
-    if (!provider) {
+  const $set: Record<string, unknown> = { updatedAt: new Date() };
+  if (name !== undefined) {
+    if (!name) return NextResponse.json({ error: "Nombre vacío" }, { status: 400 });
+    $set.name = name;
+  }
+  if (ruc !== undefined) {
+    if (!RUC_RE.test(ruc)) {
       return NextResponse.json(
-        { error: "Proveedor no encontrado" },
-        { status: 404 }
+        { error: "RUC debe tener 13 dígitos" },
+        { status: 400 }
       );
     }
+    $set.ruc = ruc;
+  }
+  if (email !== undefined) $set.email = email;
+  if (phone !== undefined) $set.phone = phone;
 
+  try {
+    const db = await getDb();
+    const r = await db
+      .collection(mongoColl.providers)
+      .updateOne({ _id: oid }, { $set });
+    if (r.matchedCount === 0) {
+      return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    }
+    const p = await db.collection(mongoColl.providers).findOne({ _id: oid });
     return NextResponse.json({
-      _id: provider._id.toString(),
-      name: provider.name,
-      ruc: provider.ruc,
-      email: provider.email || null,
-      phone: provider.phone || null,
+      provider: {
+        id: String(p!._id),
+        name: p!.name,
+        ruc: p!.ruc,
+        email: p!.email ?? null,
+        phone: p!.phone ?? null,
+      },
     });
-  } catch (error) {
-    console.error("Error en PATCH /api/providers/[id]:", error);
-    return NextResponse.json(
-      { error: "Error interno del servidor" },
-      { status: 500 }
-    );
+  } catch (e: unknown) {
+    if (typeof e === "object" && e !== null && "code" in e && (e as { code: number }).code === 11000) {
+      return NextResponse.json({ error: "RUC ya registrado" }, { status: 409 });
+    }
+    throw e;
   }
 }
 
 export async function DELETE(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  _request: Request,
+  { params }: { params: { id: string } }
 ) {
-  try {
-    const session = await getSessionFromRequest(req);
-    if (!session || session.role !== "ADMIN") {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
-
-    const { id } = await params;
-    await dbConnect();
-    const { default: Provider } = await import("@/models/Provider");
-    const Doc = (await import("@/models/Document")).default;
-    const { default: User } = await import("@/models/User");
-
-    const provider = await Provider.findById(id);
-    if (!provider) {
-      return NextResponse.json(
-        { error: "Proveedor no encontrado" },
-        { status: 404 }
-      );
-    }
-
-    // Eliminar archivos de Azure
-    const documents = await Doc.find({ providerId: id });
-    for (const doc of documents) {
-      if (doc.blobName) {
-        await deleteFileFromAzure(doc.blobName);
-      }
-    }
-
-    // Eliminar documentos
-    await Doc.deleteMany({ providerId: id });
-
-    // Desvincular usuarios
-    await User.updateMany({ providerId: id }, { $set: { providerId: null } });
-
-    // Eliminar proveedor
-    await Provider.findByIdAndDelete(id);
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Error en DELETE /api/providers/[id]:", error);
-    return NextResponse.json(
-      { error: "Error interno del servidor" },
-      { status: 500 }
-    );
+  const session = await getSession();
+  if (!session || session.role !== "admin") {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
+  const oid = toObjectId(params.id);
+  if (!oid) {
+    return NextResponse.json({ error: "ID inválido" }, { status: 400 });
+  }
+
+  const db = await getDb();
+  const docs = await db
+    .collection(mongoColl.documents)
+    .find({ providerId: oid })
+    .toArray();
+  for (const d of docs) {
+    await deleteAzureBlobIfExists(d.blobName as string | null);
+  }
+  await db.collection(mongoColl.documents).deleteMany({ providerId: oid });
+  await db.collection(mongoColl.users).updateMany(
+    { providerId: oid },
+    { $set: { providerId: null } }
+  );
+  const r = await db.collection(mongoColl.providers).deleteOne({ _id: oid });
+  if (r.deletedCount === 0) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
+  return NextResponse.json({ ok: true });
 }

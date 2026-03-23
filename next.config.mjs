@@ -1,6 +1,10 @@
-import type { NextConfig } from "next";
+import nextEnv from "@next/env";
 
-const nextConfig: NextConfig = {
+const { loadEnvConfig } = nextEnv;
+loadEnvConfig(process.cwd());
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ["mongoose"],
   },

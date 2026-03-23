@@ -1,45 +1,36 @@
-import { NextRequest, NextResponse } from "next/server";
-import { dbConnect } from "@/lib/mongodb";
-import { getSessionFromRequest } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import { mongoColl } from "@/lib/mongo-collections";
+import { getSession } from "@/lib/auth";
+import { getDb } from "@/lib/mongodb";
+import { toObjectId } from "@/lib/object-id";
+import type { NotificationKind } from "@/lib/types";
 
-export async function GET(req: NextRequest) {
-  try {
-    const session = await getSessionFromRequest(req);
-    if (!session) {
-      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    }
-
-    const { searchParams } = new URL(req.url);
-    const userId = searchParams.get("userId") || session.id;
-
-    await dbConnect();
-    const { default: Notification } = await import("@/models/Notification");
-
-    const notifications = await Notification.find({ userId })
-      .sort({ createdAt: -1 })
-      .limit(20);
-
-    const unreadCount = await Notification.countDocuments({
-      userId,
-      read: false,
-    });
-
-    return NextResponse.json({
-      notifications: notifications.map((n) => ({
-        _id: n._id.toString(),
-        userId: n.userId.toString(),
-        message: n.message,
-        type: n.type,
-        read: n.read,
-        createdAt: n.createdAt,
-      })),
-      unreadCount,
-    });
-  } catch (error) {
-    console.error("Error en GET /api/notifications:", error);
-    return NextResponse.json(
-      { error: "Error interno del servidor" },
-      { status: 500 }
-    );
+export async function GET() {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
+  const uid = toObjectId(session.id);
+  if (!uid) {
+    return NextResponse.json({ error: "Sesión inválida" }, { status: 401 });
+  }
+  const db = await getDb();
+  const list = await db
+    .collection(mongoColl.notifications)
+    .find({ userId: uid })
+    .sort({ createdAt: -1 })
+    .limit(20)
+    .toArray();
+  const notifications = list.map((n) => ({
+    id: String(n._id),
+    userId: String(n.userId),
+    message: n.message as string,
+    read: Boolean(n.read),
+    kind: (n.kind as NotificationKind) || "info",
+    createdAt:
+      n.createdAt instanceof Date
+        ? n.createdAt.toISOString()
+        : String(n.createdAt),
+  }));
+  return NextResponse.json({ notifications });
 }

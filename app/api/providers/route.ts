@@ -1,144 +1,92 @@
-import { NextRequest, NextResponse } from "next/server";
-import { dbConnect } from "@/lib/mongodb";
-import { getSessionFromRequest } from "@/lib/auth";
-import mongoose from "mongoose";
+import { NextResponse } from "next/server";
+import { mongoColl } from "@/lib/mongo-collections";
+import { getSession } from "@/lib/auth";
+import { getDb } from "@/lib/mongodb";
 
-export async function GET(req: NextRequest) {
-  try {
-    const session = await getSessionFromRequest(req);
-    if (!session) {
-      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    }
+const RUC_RE = /^\d{13}$/;
 
-    await dbConnect();
-    const { default: Provider } = await import("@/models/Provider");
-    const Doc = (await import("@/models/Document")).default;
-
-    const providers = await Provider.find({}).sort({ name: 1 });
-
-    // Calcular stats por proveedor con aggregate
-    const statsAgg = await Doc.aggregate([
-      {
-        $group: {
-          _id: "$providerId",
-          pending: {
-            $sum: { $cond: [{ $eq: ["$status", "PENDING"] }, 1, 0] },
-          },
-          uploaded: {
-            $sum: { $cond: [{ $eq: ["$status", "UPLOADED"] }, 1, 0] },
-          },
-          approved: {
-            $sum: { $cond: [{ $eq: ["$status", "APPROVED"] }, 1, 0] },
-          },
-          rejected: {
-            $sum: { $cond: [{ $eq: ["$status", "REJECTED"] }, 1, 0] },
-          },
-          total: { $sum: 1 },
-        },
-      },
-    ]);
-
-    const statsMap = new Map(
-      statsAgg.map((s) => [s._id.toString(), s])
-    );
-
-    const result = providers.map((p) => {
-      const stats = statsMap.get(p._id.toString()) || {
-        pending: 0,
-        uploaded: 0,
-        approved: 0,
-        rejected: 0,
-        total: 0,
-      };
-
-      return {
-        _id: p._id.toString(),
-        name: p.name,
-        ruc: p.ruc,
-        email: p.email || null,
-        phone: p.phone || null,
-        createdAt: p.createdAt,
-        updatedAt: p.updatedAt,
-        stats: {
-          pending: stats.pending,
-          uploaded: stats.uploaded,
-          approved: stats.approved,
-          rejected: stats.rejected,
-          total: stats.total,
-        },
-      };
-    });
-
-    return NextResponse.json(result);
-  } catch (error) {
-    console.error("Error en GET /api/providers:", error);
-    return NextResponse.json(
-      { error: "Error interno del servidor" },
-      { status: 500 }
-    );
+export async function GET(request: Request) {
+  const session = await getSession();
+  if (!session || (session.role !== "empresa" && session.role !== "admin")) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
+  const { searchParams } = new URL(request.url);
+  const q = (searchParams.get("q") || "").trim();
+
+  const db = await getDb();
+  const col = db.collection(mongoColl.providers);
+  const filter =
+    q.length > 0
+      ? {
+          $or: [
+            { name: { $regex: q, $options: "i" } },
+            { ruc: { $regex: q, $options: "i" } },
+          ],
+        }
+      : {};
+  const list = await col.find(filter).sort({ name: 1 }).toArray();
+  const providers = list.map((p) => ({
+    id: String(p._id),
+    name: p.name,
+    ruc: p.ruc,
+    email: p.email ?? null,
+    phone: p.phone ?? null,
+  }));
+  return NextResponse.json({ providers });
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(request: Request) {
+  const session = await getSession();
+  if (!session || session.role !== "admin") {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+  }
+  const body = await request.json().catch(() => null);
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const ruc = typeof body?.ruc === "string" ? body.ruc.trim() : "";
+  const email =
+    typeof body?.email === "string" && body.email.trim()
+      ? body.email.trim()
+      : null;
+  const phone =
+    typeof body?.phone === "string" && body.phone.trim()
+      ? body.phone.trim()
+      : null;
+  if (!name) {
+    return NextResponse.json({ error: "Nombre obligatorio" }, { status: 400 });
+  }
+  if (!RUC_RE.test(ruc)) {
+    return NextResponse.json(
+      { error: "RUC debe tener exactamente 13 dígitos" },
+      { status: 400 }
+    );
+  }
+  const now = new Date();
   try {
-    const session = await getSessionFromRequest(req);
-    if (!session || (session.role !== "ADMIN" && session.role !== "EMPRESA")) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
-
-    await dbConnect();
-    const { default: Provider } = await import("@/models/Provider");
-
-    const body = await req.json();
-    const { name, ruc, email, phone } = body;
-
-    if (!name || !ruc) {
-      return NextResponse.json(
-        { error: "Nombre y RUC son requeridos" },
-        { status: 400 }
-      );
-    }
-
-    if (!/^\d{13}$/.test(ruc)) {
-      return NextResponse.json(
-        { error: "El RUC debe tener exactamente 13 dígitos numéricos" },
-        { status: 400 }
-      );
-    }
-
-    const existing = await Provider.findOne({ ruc });
-    if (existing) {
-      return NextResponse.json(
-        { error: "Ya existe un proveedor con ese RUC" },
-        { status: 409 }
-      );
-    }
-
-    const provider = await Provider.create({
-      name: name.trim(),
-      ruc: ruc.trim(),
-      email: email?.trim() || undefined,
-      phone: phone?.trim() || undefined,
+    const db = await getDb();
+    const ins = await db.collection(mongoColl.providers).insertOne({
+      name,
+      ruc,
+      email,
+      phone,
+      createdAt: now,
+      updatedAt: now,
     });
-
-    return NextResponse.json(
-      {
-        _id: provider._id.toString(),
-        name: provider.name,
-        ruc: provider.ruc,
-        email: provider.email || null,
-        phone: provider.phone || null,
-        createdAt: provider.createdAt,
-        updatedAt: provider.updatedAt,
-        stats: { pending: 0, uploaded: 0, approved: 0, rejected: 0, total: 0 },
+    const p = await db.collection(mongoColl.providers).findOne({
+      _id: ins.insertedId,
+    });
+    return NextResponse.json({
+      provider: {
+        id: String(p!._id),
+        name: p!.name,
+        ruc: p!.ruc,
+        email: p!.email ?? null,
+        phone: p!.phone ?? null,
       },
-      { status: 201 }
-    );
-  } catch (error) {
-    console.error("Error en POST /api/providers:", error);
-    return NextResponse.json(
-      { error: "Error interno del servidor" },
-      { status: 500 }
-    );
+    });
+  } catch (e: unknown) {
+    if (typeof e === "object" && e !== null && "code" in e && (e as { code: number }).code === 11000) {
+      return NextResponse.json({ error: "RUC ya registrado" }, { status: 409 });
+    }
+    throw e;
   }
 }

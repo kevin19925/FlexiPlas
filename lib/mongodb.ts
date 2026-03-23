@@ -1,54 +1,33 @@
-import mongoose from "mongoose";
-
-const MONGODB_URI = process.env.MONGODB_URI!;
-const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || "sis_archivos";
-
-if (!MONGODB_URI) {
-  throw new Error("Por favor define la variable de entorno MONGODB_URI en .env.local");
-}
+import { MongoClient } from "mongodb";
+import { runtimeEnv } from "./runtime-env";
 
 declare global {
-  // eslint-disable-next-line no-var
-  var mongooseCache: {
-    conn: typeof mongoose | null;
-    promise: Promise<typeof mongoose> | null;
-  };
+  // eslint-disable-next-line no-var -- cache HMR
+  var _mongoClientPromise: Promise<MongoClient> | undefined;
 }
 
-if (!global.mongooseCache) {
-  global.mongooseCache = { conn: null, promise: null };
+function getUri(): string {
+  const uri = runtimeEnv("MONGODB_URI");
+  if (!uri) throw new Error("MONGODB_URI no configurada");
+  return uri;
 }
 
-export async function dbConnect(): Promise<typeof mongoose> {
-  if (global.mongooseCache.conn) {
-    return global.mongooseCache.conn;
+const clientOptions = {
+  /** Falla antes que el default 30s; útil para ver errores de red/Atlas más claros */
+  serverSelectionTimeoutMS: 15_000,
+  connectTimeoutMS: 15_000,
+} as const;
+
+export function getMongoClient(): Promise<MongoClient> {
+  if (!global._mongoClientPromise) {
+    const client = new MongoClient(getUri(), clientOptions);
+    global._mongoClientPromise = client.connect();
   }
+  return global._mongoClientPromise;
+}
 
-  if (!global.mongooseCache.promise) {
-    const opts = {
-      dbName: MONGODB_DB_NAME,
-      bufferCommands: false,
-    };
-
-    global.mongooseCache.promise = mongoose
-      .connect(MONGODB_URI, opts)
-      .then((mongooseInstance) => {
-        console.log("✅ MongoDB conectado correctamente");
-        return mongooseInstance;
-      })
-      .catch((err) => {
-        console.error("❌ Error al conectar MongoDB:", err);
-        global.mongooseCache.promise = null;
-        throw err;
-      });
-  }
-
-  try {
-    global.mongooseCache.conn = await global.mongooseCache.promise;
-  } catch (e) {
-    global.mongooseCache.promise = null;
-    throw e;
-  }
-
-  return global.mongooseCache.conn;
+export async function getDb() {
+  const client = await getMongoClient();
+  const name = runtimeEnv("MONGODB_DB_NAME") || "sis_archivos";
+  return client.db(name);
 }

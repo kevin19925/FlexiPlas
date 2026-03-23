@@ -1,44 +1,71 @@
-import { NextRequest, NextResponse } from "next/server";
-import { dbConnect } from "@/lib/mongodb";
-import { getSessionFromRequest } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import { mongoColl } from "@/lib/mongo-collections";
+import { getSession } from "@/lib/auth";
+import { getDb } from "@/lib/mongodb";
+import { toObjectId } from "@/lib/object-id";
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  const session = await getSession();
+  if (!session || session.role !== "admin") {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+  }
+  const oid = toObjectId(params.id);
+  if (!oid) {
+    return NextResponse.json({ error: "ID inválido" }, { status: 400 });
+  }
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || !("maxDownloadsPerDocument" in body)) {
+    return NextResponse.json({ error: "Sin cambios" }, { status: 400 });
+  }
+  const raw = (body as { maxDownloadsPerDocument: unknown }).maxDownloadsPerDocument;
+  let value: number | null = null;
+  if (raw === null || raw === "") {
+    value = null;
+  } else if (typeof raw === "number" && Number.isFinite(raw)) {
+    if (raw < -1) {
+      return NextResponse.json({ error: "Valor inválido" }, { status: 400 });
+    }
+    value = Math.floor(raw);
+  } else {
+    return NextResponse.json({ error: "Valor inválido" }, { status: 400 });
+  }
+
+  const db = await getDb();
+  const r = await db.collection(mongoColl.users).updateOne(
+    { _id: oid },
+    { $set: { maxDownloadsPerDocument: value } }
+  );
+  if (r.matchedCount === 0) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
+  return NextResponse.json({ ok: true });
+}
 
 export async function DELETE(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  _request: Request,
+  { params }: { params: { id: string } }
 ) {
-  try {
-    const session = await getSessionFromRequest(req);
-    if (!session || session.role !== "ADMIN") {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
-    }
-
-    const { id } = await params;
-
-    if (id === session.id) {
-      return NextResponse.json(
-        { error: "No puedes eliminar tu propio usuario" },
-        { status: 400 }
-      );
-    }
-
-    await dbConnect();
-    const { default: User } = await import("@/models/User");
-
-    const deleted = await User.findByIdAndDelete(id);
-
-    if (!deleted) {
-      return NextResponse.json(
-        { error: "Usuario no encontrado" },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Error en DELETE /api/users/[id]:", error);
+  const session = await getSession();
+  if (!session || session.role !== "admin") {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+  }
+  const oid = toObjectId(params.id);
+  if (!oid) {
+    return NextResponse.json({ error: "ID inválido" }, { status: 400 });
+  }
+  if (String(oid) === session.id) {
     return NextResponse.json(
-      { error: "Error interno del servidor" },
-      { status: 500 }
+      { error: "No puedes eliminarte a ti mismo" },
+      { status: 400 }
     );
   }
+  const db = await getDb();
+  const r = await db.collection(mongoColl.users).deleteOne({ _id: oid });
+  if (r.deletedCount === 0) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
+  return NextResponse.json({ ok: true });
 }
