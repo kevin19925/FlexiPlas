@@ -105,3 +105,73 @@ export interface DbNotification {
   kind: NotificationKind;
   createdAt: Date;
 }
+
+// Legacy UI compatibility types (used by app/(dashboard)/* pages).
+export type DocStatus = "PENDING" | "UPLOADED" | "APPROVED" | "REJECTED";
+
+export interface IDocument {
+  _id: string;
+  providerId: string;
+  providerName?: string;
+  documentType: string;
+  year: number;
+  description: string;
+  status: DocStatus;
+  fileName?: string | null;
+  fileUrl?: string | null;
+  blobName?: string | null;
+  observations?: string | null;
+  deadline?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IProvider {
+  _id: string;
+  name: string;
+  ruc: string;
+  email?: string | null;
+  phone?: string | null;
+  createdAt?: string;
+}
+
+export interface IProviderWithStats extends IProvider {
+  stats: {
+    total: number;
+    pending?: number;
+    uploaded?: number;
+    approved?: number;
+    rejected?: number;
+  };
+}
+
+export interface IUser {
+  _id: string;
+  name: string;
+  email: string;
+  role: "ADMIN" | "EMPRESA" | "PROVEEDOR";
+  providerId?: string | null;
+  providerName?: string | null;
+  createdAt: string;
+}
+
+export const DOCUMENT_TYPES = [
+  "RUC",
+  "Permiso Bomberos",
+  "Patente Municipal",
+  "Certificado IESS",
+  "Seguro RC",
+  "Permiso Sanitario",
+  "Certificado Bancario",
+] as const;
+
+export type NotificationType = "SUCCESS" | "ERROR" | "WARNING" | "INFO";
+
+export interface INotification {
+  _id: string;
+  userId: string;
+  message: string;
+  read: boolean;
+  type: NotificationType;
+  createdAt: string;
+}

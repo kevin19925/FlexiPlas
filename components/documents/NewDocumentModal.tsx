@@ -7,10 +7,14 @@ import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import Textarea from "@/components/ui/Textarea";
 import Button from "@/components/ui/Button";
-import { DOCUMENT_TYPES, type IProvider } from "@/lib/types";
+import { SUGGESTED_DOCUMENT_TYPES } from "@/lib/constants";
 import { getCurrentYear, getYearRange } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
+
+type IProvider = { _id: string; name: string; ruc: string };
+
+const DOCUMENT_TYPES = [...SUGGESTED_DOCUMENT_TYPES];
 
 interface NewDocumentModalProps {
   open: boolean;

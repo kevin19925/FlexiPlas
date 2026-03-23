@@ -49,20 +49,20 @@ export default function Sidebar({ user, open, onClose }: SidebarProps) {
   const router = useRouter();
 
   let links: NavLink[] = [];
-  if (user.role === "ADMIN") links = adminLinks;
-  else if (user.role === "EMPRESA") links = empresaLinks;
+  if (user.role === "admin") links = adminLinks;
+  else if (user.role === "empresa") links = empresaLinks;
   else links = proveedorLinks;
 
   const roleLabel = {
-    ADMIN: "Administrador",
-    EMPRESA: "Empresa",
-    PROVEEDOR: "Proveedor",
+    admin: "Administrador",
+    empresa: "Empresa",
+    proveedor: "Proveedor",
   }[user.role];
 
   const roleColor = {
-    ADMIN: "bg-purple-500",
-    EMPRESA: "bg-blue-500",
-    PROVEEDOR: "bg-emerald-500",
+    admin: "bg-purple-500",
+    empresa: "bg-blue-500",
+    proveedor: "bg-emerald-500",
   }[user.role];
 
   async function handleLogout() {

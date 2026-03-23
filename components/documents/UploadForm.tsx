@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Upload, FileText, Image, X, CheckCircle } from "lucide-react";
+import { Upload, FileText, Image as ImageIcon, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn, formatFileSize } from "@/lib/utils";
 import Button from "@/components/ui/Button";
@@ -142,7 +142,7 @@ export default function UploadForm({ documentId, onSuccess }: UploadFormProps) {
           >
             <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center flex-shrink-0">
               {isImage ? (
-                <Image className="w-5 h-5 text-blue-500" />
+                <ImageIcon className="w-5 h-5 text-blue-500" />
               ) : (
                 <FileText className="w-5 h-5 text-red-500" />
               )}
@@ -155,6 +155,7 @@ export default function UploadForm({ documentId, onSuccess }: UploadFormProps) {
               <button
                 onClick={(e) => { e.stopPropagation(); setFile(null); }}
                 className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-500 transition-colors"
+                aria-label="Quitar archivo"
               >
                 <X className="w-4 h-4" />
               </button>

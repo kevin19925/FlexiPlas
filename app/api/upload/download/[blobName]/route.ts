@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionFromRequest } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
 import { generateSasUrl } from "@/lib/azure";
 
 export async function GET(
@@ -7,7 +7,7 @@ export async function GET(
   { params }: { params: Promise<{ blobName: string }> }
 ) {
   try {
-    const session = await getSessionFromRequest(req);
+    const session = await getSession();
     if (!session) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }

@@ -43,6 +43,9 @@ export default function DashboardLayout({
   }
 
   const pageTitle = {
+    admin: "Panel Admin",
+    empresa: "Panel Empresa",
+    proveedor: "Mis Documentos",
     ADMIN: "Panel Admin",
     EMPRESA: "Panel Empresa",
     PROVEEDOR: "Mis Documentos",

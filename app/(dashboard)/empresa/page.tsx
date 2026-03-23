@@ -12,8 +12,17 @@ import ProviderForm from "@/components/providers/ProviderForm";
 import NewDocumentModal from "@/components/documents/NewDocumentModal";
 import EmptyState from "@/components/ui/EmptyState";
 import { SkeletonCard } from "@/components/ui/Skeleton";
-import type { IProviderWithStats } from "@/lib/types";
 import toast from "react-hot-toast";
+
+type IProviderWithStats = {
+  _id: string;
+  name: string;
+  ruc: string;
+  email?: string | null;
+  phone?: string | null;
+  createdAt: string;
+  stats: { total: number };
+};
 
 export default function EmpresaDashboard() {
   const router = useRouter();

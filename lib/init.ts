@@ -1,9 +1,9 @@
-import { dbConnect } from "./mongodb";
+import { getMongoClient } from "./mongodb";
 import bcrypt from "bcryptjs";
 
 export async function initializeSystem(): Promise<void> {
   try {
-    await dbConnect();
+    await getMongoClient();
 
     // Import models after connecting
     const { default: User } = await import("@/models/User");

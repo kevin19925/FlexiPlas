@@ -14,8 +14,25 @@ import DocumentCard from "@/components/documents/DocumentCard";
 import EmptyState from "@/components/ui/EmptyState";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import { getCurrentYear } from "@/lib/utils";
-import type { IDocument } from "@/lib/types";
 import toast from "react-hot-toast";
+
+type DocStatus = "PENDING" | "UPLOADED" | "APPROVED" | "REJECTED";
+type IDocument = {
+  _id: string;
+  providerId: string;
+  providerName?: string;
+  documentType: string;
+  year: number;
+  description: string;
+  status: DocStatus;
+  fileName?: string | null;
+  fileUrl?: string | null;
+  blobName?: string | null;
+  observations?: string | null;
+  deadline?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export default function ProveedorDashboard() {
   const [documents, setDocuments] = useState<IDocument[]>([]);

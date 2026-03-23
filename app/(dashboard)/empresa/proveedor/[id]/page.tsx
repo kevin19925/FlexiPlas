@@ -22,8 +22,39 @@ import TraceabilityTable from "@/components/documents/TraceabilityTable";
 import NewDocumentModal from "@/components/documents/NewDocumentModal";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import { getYearRange, getCurrentYear } from "@/lib/utils";
-import type { IDocument, IProviderWithStats, DocStatus } from "@/lib/types";
 import toast from "react-hot-toast";
+
+type DocStatus = "PENDING" | "UPLOADED" | "APPROVED" | "REJECTED";
+type IDocument = {
+  _id: string;
+  providerId: string;
+  providerName?: string;
+  documentType: string;
+  year: number;
+  description: string;
+  status: DocStatus;
+  fileName?: string | null;
+  fileUrl?: string | null;
+  blobName?: string | null;
+  observations?: string | null;
+  deadline?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+type IProviderWithStats = {
+  _id: string;
+  name: string;
+  ruc: string;
+  email?: string | null;
+  phone?: string | null;
+  stats: {
+    total: number;
+    pending: number;
+    uploaded: number;
+    approved: number;
+    rejected: number;
+  };
+};
 
 export default function ProviderDetailPage() {
   const params = useParams();
