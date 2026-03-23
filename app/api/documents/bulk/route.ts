@@ -3,6 +3,7 @@ import { mongoColl } from "@/lib/mongo-collections";
 import { getSession } from "@/lib/auth";
 import { getDb } from "@/lib/mongodb";
 import { notifyUsersByFilter } from "@/lib/notifications-service";
+import { formatDeadlineLongEs, parseRequiredDeadline } from "@/lib/deadline";
 import { assertBulkSize, resolveProviderTargets } from "@/lib/resolve-provider-targets";
 import { serializeDocument } from "@/lib/serialize";
 import type { DbDocument } from "@/lib/types";
@@ -30,6 +31,13 @@ export async function POST(request: Request) {
   if (!Number.isFinite(year)) {
     return NextResponse.json({ error: "Año inválido" }, { status: 400 });
   }
+
+  const dl = parseRequiredDeadline(body?.deadline);
+  if (!dl.ok) {
+    return NextResponse.json({ error: dl.error }, { status: 400 });
+  }
+  const deadline = dl.date;
+  const deadlineLabel = formatDeadlineLongEs(dl.isoDay);
 
   const parsed: Item[] = [];
   for (const row of items) {
@@ -78,7 +86,7 @@ export async function POST(request: Request) {
           status: "pending",
           blobName: null,
           observations: null,
-          deadline: null,
+          deadline,
           createdAt: now,
           updatedAt: now,
         });
@@ -109,8 +117,8 @@ export async function POST(request: Request) {
     if (oid && n > 0) {
       await notifyUsersByFilter(
         { role: "proveedor", providerId: oid },
-        `Nuevas solicitudes (${n}): revisa tu panel de documentos.`,
-        "info"
+        `Tienes ${n} solicitud(es) nuevas. Fecha límite para subir la documentación: ${deadlineLabel}. Entra a «Mis documentos» y completa cada ítem.`,
+        "warning"
       );
     }
   }

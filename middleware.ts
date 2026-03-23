@@ -7,6 +7,7 @@ function roleForPath(pathname: string): UserRole | null {
   if (pathname.startsWith("/dashboard/empresa")) return "empresa";
   if (pathname.startsWith("/dashboard/proveedor")) return "proveedor";
   if (pathname.startsWith("/dashboard/admin")) return "admin";
+  if (pathname.startsWith("/dashboard/cliente")) return "cliente";
   return null;
 }
 
@@ -22,7 +23,9 @@ export async function middleware(request: NextRequest) {
           ? "/dashboard/admin"
           : session.role === "empresa"
             ? "/dashboard/empresa"
-            : "/dashboard/proveedor";
+            : session.role === "cliente"
+              ? "/dashboard/cliente"
+              : "/dashboard/proveedor";
       return NextResponse.redirect(new URL(dest, request.url));
     }
     return NextResponse.next();
@@ -41,7 +44,9 @@ export async function middleware(request: NextRequest) {
           ? "/dashboard/admin"
           : session.role === "empresa"
             ? "/dashboard/empresa"
-            : "/dashboard/proveedor";
+            : session.role === "cliente"
+              ? "/dashboard/cliente"
+              : "/dashboard/proveedor";
       return NextResponse.redirect(new URL(fallback, request.url));
     }
   }

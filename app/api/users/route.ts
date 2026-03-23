@@ -1,3 +1,4 @@
+import type { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { mongoColl } from "@/lib/mongo-collections";
@@ -19,19 +20,37 @@ export async function GET() {
     .toArray();
   const provs = await db.collection(mongoColl.providers).find().toArray();
   const pmap = new Map(provs.map((p) => [String(p._id), p.name as string]));
-  const list = users.map((u) => ({
-    id: String(u._id),
-    email: u.email,
-    name: u.name,
-    role: u.role as UserRole,
-    providerId: u.providerId ? String(u.providerId) : null,
-    providerName: u.providerId ? pmap.get(String(u.providerId)) ?? null : null,
-    createdAt: u.createdAt?.toISOString?.() ?? null,
-    maxDownloadsPerDocument:
-      typeof u.maxDownloadsPerDocument === "number"
-        ? u.maxDownloadsPerDocument
-        : null,
-  }));
+  const empresaUsers = await db
+    .collection(mongoColl.users)
+    .find({ role: "empresa" })
+    .project({ name: 1, email: 1 })
+    .toArray();
+  const emap = new Map(
+    empresaUsers.map((e) => [
+      String(e._id),
+      { name: e.name as string, email: e.email as string },
+    ])
+  );
+  const list = users.map((u) => {
+    const eid = u.empresaUserId ? String(u.empresaUserId) : null;
+    const emp = eid ? emap.get(eid) : undefined;
+    return {
+      id: String(u._id),
+      email: u.email,
+      name: u.name,
+      role: u.role as UserRole,
+      providerId: u.providerId ? String(u.providerId) : null,
+      providerName: u.providerId ? pmap.get(String(u.providerId)) ?? null : null,
+      empresaUserId: eid,
+      empresaLinkedName: emp?.name ?? null,
+      empresaLinkedEmail: emp?.email ?? null,
+      createdAt: u.createdAt?.toISOString?.() ?? null,
+      maxDownloadsPerDocument:
+        typeof u.maxDownloadsPerDocument === "number"
+          ? u.maxDownloadsPerDocument
+          : null,
+    };
+  });
   return NextResponse.json({ users: list });
 }
 
@@ -47,11 +66,18 @@ export async function POST(request: Request) {
   const role = body?.role as UserRole | undefined;
   const providerIdRaw =
     typeof body?.providerId === "string" ? body.providerId : null;
+  const empresaUserIdRaw =
+    typeof body?.empresaUserId === "string" ? body.empresaUserId : null;
 
   if (!email || !password || !name || !role) {
     return NextResponse.json({ error: "Datos incompletos" }, { status: 400 });
   }
-  if (role !== "admin" && role !== "empresa" && role !== "proveedor") {
+  if (
+    role !== "admin" &&
+    role !== "empresa" &&
+    role !== "proveedor" &&
+    role !== "cliente"
+  ) {
     return NextResponse.json({ error: "Rol inválido" }, { status: 400 });
   }
   if (role === "proveedor") {
@@ -74,6 +100,34 @@ export async function POST(request: Request) {
     );
   }
 
+  let empresaUserId: ObjectId | null = null;
+  if (role === "cliente") {
+    const eid = toObjectId(empresaUserIdRaw || "");
+    if (!eid) {
+      return NextResponse.json(
+        { error: "Empresa vinculada requerida para rol cliente" },
+        { status: 400 }
+      );
+    }
+    const db = await getDb();
+    const emp = await db.collection(mongoColl.users).findOne({
+      _id: eid,
+      role: "empresa",
+    });
+    if (!emp) {
+      return NextResponse.json(
+        { error: "La empresa indicada no existe o no es rol empresa" },
+        { status: 400 }
+      );
+    }
+    empresaUserId = eid;
+  } else if (empresaUserIdRaw) {
+    return NextResponse.json(
+      { error: "Solo usuarios cliente llevan empresa vinculada" },
+      { status: 400 }
+    );
+  }
+
   const passwordHash = await bcrypt.hash(password, 10);
   const now = new Date();
   const providerId =
@@ -87,6 +141,7 @@ export async function POST(request: Request) {
       name,
       role,
       providerId,
+      empresaUserId,
       createdAt: now,
     });
     const u = await db.collection(mongoColl.users).findOne({ _id: ins.insertedId });
@@ -97,6 +152,7 @@ export async function POST(request: Request) {
         name: u!.name,
         role: u!.role,
         providerId: u!.providerId ? String(u!.providerId) : null,
+        empresaUserId: u!.empresaUserId ? String(u!.empresaUserId) : null,
       },
     });
   } catch (e: unknown) {

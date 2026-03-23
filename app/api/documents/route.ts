@@ -5,6 +5,7 @@ import { getDb } from "@/lib/mongodb";
 import { notifyUsersByFilter } from "@/lib/notifications-service";
 import { buildDownloadInfoForDocuments } from "@/lib/download-quota";
 import { resolveProviderTargets } from "@/lib/resolve-provider-targets";
+import { formatDeadlineLongEs, parseRequiredDeadline } from "@/lib/deadline";
 import { serializeDocument } from "@/lib/serialize";
 import type { DbDocument } from "@/lib/types";
 import { toObjectId } from "@/lib/object-id";
@@ -74,14 +75,12 @@ export async function POST(request: Request) {
   const year = Number(body?.year);
   const description =
     typeof body?.description === "string" ? body.description.trim() : "";
-  const deadlineRaw = body?.deadline;
-  const deadline =
-    typeof deadlineRaw === "string" && deadlineRaw
-      ? new Date(deadlineRaw)
-      : null;
-  if (deadline && Number.isNaN(deadline.getTime())) {
-    return NextResponse.json({ error: "Fecha límite inválida" }, { status: 400 });
+  const dl = parseRequiredDeadline(body?.deadline);
+  if (!dl.ok) {
+    return NextResponse.json({ error: dl.error }, { status: 400 });
   }
+  const deadline = dl.date;
+  const deadlineLabel = formatDeadlineLongEs(dl.isoDay);
   if (!documentType || !Number.isFinite(year) || !description) {
     return NextResponse.json({ error: "Datos incompletos" }, { status: 400 });
   }
@@ -118,8 +117,8 @@ export async function POST(request: Request) {
           created.push(doc as unknown as DbDocument);
           await notifyUsersByFilter(
             { role: "proveedor", providerId: targetPid },
-            `Nueva solicitud: ${documentType} (${year}) — ${msgTail}`,
-            "info"
+            `Nueva solicitud: debes subir «${documentType}» (${year}). Fecha límite: ${deadlineLabel}. ${msgTail}`,
+            "warning"
           );
         }
       } catch (e: unknown) {

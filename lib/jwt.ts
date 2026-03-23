@@ -23,6 +23,7 @@ export async function signSessionToken(user: SessionUser): Promise<string> {
     name: user.name,
     role: user.role,
     ...(user.providerId ? { providerId: user.providerId } : {}),
+    ...(user.empresaUserId ? { empresaUserId: user.empresaUserId } : {}),
   })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(user.id)
@@ -45,7 +46,14 @@ export async function verifySessionToken(
       return null;
     }
     const role = payload.role as UserRole;
-    if (role !== "admin" && role !== "empresa" && role !== "proveedor") return null;
+    if (
+      role !== "admin" &&
+      role !== "empresa" &&
+      role !== "proveedor" &&
+      role !== "cliente"
+    ) {
+      return null;
+    }
     return {
       id: sub,
       email: payload.email,
@@ -53,6 +61,10 @@ export async function verifySessionToken(
       role,
       providerId:
         typeof payload.providerId === "string" ? payload.providerId : undefined,
+      empresaUserId:
+        typeof payload.empresaUserId === "string"
+          ? payload.empresaUserId
+          : undefined,
     };
   } catch {
     return null;

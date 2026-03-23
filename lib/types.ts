@@ -1,6 +1,6 @@
 import type { ObjectId } from "mongodb";
 
-export type UserRole = "admin" | "empresa" | "proveedor";
+export type UserRole = "admin" | "empresa" | "proveedor" | "cliente";
 
 export type DocumentStatus = "pending" | "uploaded" | "approved" | "rejected";
 
@@ -12,6 +12,10 @@ export interface SessionUser {
   role: UserRole;
   name: string;
   providerId?: string;
+  /** Usuario empresa al que está vinculado el cliente (ve sus archivos corporativos). */
+  empresaUserId?: string;
+  /** Solo rol cliente: datos de la empresa vinculada (enriquecido en /api/auth/me). */
+  linkedEmpresa?: { name: string; email: string };
 }
 
 export interface Provider {
@@ -58,9 +62,24 @@ export interface DbUser {
   name: string;
   role: UserRole;
   providerId: ObjectId | null;
+  /** Referencia al usuario con rol empresa (solo rol cliente). */
+  empresaUserId?: ObjectId | null;
   createdAt: Date;
   /** undefined = hereda default global; -1 = ilimitado; ≥0 = tope por documento */
   maxDownloadsPerDocument?: number | null;
+}
+
+/** Archivos subidos por la empresa para que los clientes puedan ver o descargar. */
+export interface EmpresaUploadedFile {
+  id: string;
+  title: string;
+  documentType: string;
+  description: string | null;
+  fileName: string;
+  mimeType: string;
+  hasFile: boolean;
+  createdAt: string;
+  downloads?: { used: number; max: number | null };
 }
 
 export interface DbProvider {

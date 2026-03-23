@@ -1,29 +1,49 @@
-﻿"use client";
+"use client";
 
 import { Button, Modal, ModalBody, ModalContent, ModalHeader, Spinner } from "@nextui-org/react";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 type Props = {
-  documentId: string;
+  /** Documento de proveedor (flujo documentos). */
+  documentId?: string;
+  /** Archivo corporativo subido por empresa. */
+  empresaFileId?: string;
   mimeType: string | null | undefined;
   title: string;
   onClose: () => void;
 };
 
-export function DocumentViewerModal({ documentId, mimeType, title, onClose }: Props) {
+export function DocumentViewerModal({
+  documentId,
+  empresaFileId,
+  mimeType,
+  title,
+  onClose,
+}: Props) {
   const [url, setUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const fetchKey = documentId ?? empresaFileId ?? "";
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(
-          `/api/files/sas?documentId=${encodeURIComponent(documentId)}&mode=view`,
-          { credentials: "include" }
-        );
+        const sasUrl = documentId
+          ? `/api/files/sas?documentId=${encodeURIComponent(documentId)}&mode=view`
+          : empresaFileId
+            ? `/api/empresa-files/${encodeURIComponent(empresaFileId)}/sas?mode=view`
+            : "";
+        if (!sasUrl) {
+          if (!cancelled) {
+            setErr("Falta identificador de archivo");
+            setLoading(false);
+          }
+          return;
+        }
+        const r = await fetch(sasUrl, { credentials: "include" });
         const j = (await r.json()) as { url?: string; error?: string };
         if (cancelled) return;
         if (!r.ok || !j.url) {
@@ -40,7 +60,7 @@ export function DocumentViewerModal({ documentId, mimeType, title, onClose }: Pr
     return () => {
       cancelled = true;
     };
-  }, [documentId]);
+  }, [documentId, empresaFileId, fetchKey]);
 
   return (
     <Modal isOpen onOpenChange={(open) => !open && onClose()} size="5xl" scrollBehavior="inside">

@@ -109,7 +109,9 @@ export default function LoginPage() {
               <p className="text-sm text-default-500">Credenciales de prueba para el entorno demo.</p>
               <ul className="list-disc space-y-1 pl-5 text-sm text-default-600">
                 {[
+                  "admin@demo.com / admin123",
                   "empresa@demo.com / empresa123",
+                  "cliente@demo.com / cliente123 (ve archivos de empresa demo)",
                   "prov1@demo.com / prov123",
                   "prov2@demo.com / prov456",
                 ].map((line) => (

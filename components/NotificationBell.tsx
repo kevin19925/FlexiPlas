@@ -19,7 +19,7 @@ const KIND_DOT: Record<NotificationKind, string> = {
 export function NotificationBell({ role }: { role: string }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Notification[]>([]);
-  const pollToasts = role === "proveedor" || role === "empresa";
+  const pollToasts = role === "proveedor" || role === "empresa" || role === "cliente";
 
   const load = useCallback(async () => {
     const res = await fetch("/api/notifications", { credentials: "include" });

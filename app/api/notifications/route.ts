@@ -19,7 +19,7 @@ export async function GET() {
     .collection(mongoColl.notifications)
     .find({ userId: uid })
     .sort({ createdAt: -1 })
-    .limit(20)
+    .limit(40)
     .toArray();
   const notifications = list.map((n) => ({
     id: String(n._id),

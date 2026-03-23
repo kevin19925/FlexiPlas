@@ -11,6 +11,8 @@ export function dashboardPathForRole(role: UserRole): string {
       return "/dashboard/empresa";
     case "proveedor":
       return "/dashboard/proveedor";
+    case "cliente":
+      return "/dashboard/cliente";
     default:
       return "/login";
   }

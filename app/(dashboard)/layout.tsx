@@ -47,9 +47,11 @@ export default function DashboardLayout({
     admin: "Panel Admin",
     empresa: "Panel Empresa",
     proveedor: "Mis Documentos",
+    cliente: "Portal cliente",
     ADMIN: "Panel Admin",
     EMPRESA: "Panel Empresa",
     PROVEEDOR: "Mis Documentos",
+    CLIENTE: "Portal cliente",
   }[user.role];
 
   // Routes under /dashboard have their own blue shell layout.

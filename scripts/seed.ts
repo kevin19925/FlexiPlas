@@ -4,7 +4,10 @@
  */
 import { config } from "dotenv";
 import bcrypt from "bcryptjs";
-import { MongoClient, ObjectId } from "mongodb";
+import { existsSync, readFileSync } from "fs";
+import path from "path";
+import { MongoClient, ObjectId, type Db } from "mongodb";
+import { buildEmpresaFileBlobPath, uploadBufferToAzure } from "../lib/azure-storage";
 import { mongoColl } from "../lib/mongo-collections";
 
 config({ path: ".env.local" });
@@ -19,12 +22,96 @@ const U_ADMIN = new ObjectId("64b1b1b1b1b1b1b1b1b1b201");
 const U_EMPRESA = new ObjectId("64b1b1b1b1b1b1b1b1b1b202");
 const U_PROV1 = new ObjectId("64b1b1b1b1b1b1b1b1b1b203");
 const U_PROV2 = new ObjectId("64b1b1b1b1b1b1b1b1b1b204");
+const U_CLIENTE = new ObjectId("64b1b1b1b1b1b1b1b1b1b205");
 
 const D1 = new ObjectId("64b1b1b1b1b1b1b1b1b1b301");
 const D2 = new ObjectId("64b1b1b1b1b1b1b1b1b1b302");
 const D3 = new ObjectId("64b1b1b1b1b1b1b1b1b1b303");
 const D4 = new ObjectId("64b1b1b1b1b1b1b1b1b1b304");
 const D5 = new ObjectId("64b1b1b1b1b1b1b1b1b1b305");
+
+const MUESTRAS_DIR = path.join(process.cwd(), "muestras-pdf");
+
+/**
+ * Solo documentos corporativos de la empresa (Mis archivos).
+ * Los PDF «proveedor» de muestras-pdf/ sirven para pruebas en solicitudes / proveedor, no se cargan aquí.
+ */
+const MUESTRA_PDF_ROWS: {
+  fileName: string;
+  title: string;
+  documentType: string;
+  description: string;
+}[] = [
+  {
+    fileName: "muestra-ruc-empresa.pdf",
+    title: "RUC — empresa demo",
+    documentType: "RUC",
+    description: "Documento corporativo de muestra",
+  },
+  {
+    fileName: "muestra-permiso-bomberos.pdf",
+    title: "Permiso bomberos — instalaciones empresa",
+    documentType: "Permiso Bomberos",
+    description: "Documento corporativo de muestra",
+  },
+  {
+    fileName: "muestra-patente-municipal.pdf",
+    title: "Patente municipal — empresa",
+    documentType: "Patente Municipal",
+    description: "Documento corporativo de muestra",
+  },
+];
+
+async function seedMuestraPdfsEmpresa(db: Db, empresaUserId: ObjectId, ts: Date) {
+  const azure = process.env.AZURE_STORAGE_CONNECTION_STRING?.trim();
+  if (!azure) {
+    console.log(
+      "\n[Muestras PDF] Sin AZURE_STORAGE_CONNECTION_STRING: no se cargan PDF a «Mis archivos»."
+    );
+    console.log(
+      "  Con Azure configurado: npm run muestras:pdf && npm run seed\n"
+    );
+    return;
+  }
+
+  let cargados = 0;
+  for (const row of MUESTRA_PDF_ROWS) {
+    const fp = path.join(MUESTRAS_DIR, row.fileName);
+    if (!existsSync(fp)) {
+      console.log(`[Muestras PDF] No existe ${row.fileName} — ejecuta: npm run muestras:pdf`);
+      continue;
+    }
+    const buf = readFileSync(fp);
+    const fileId = new ObjectId();
+    const ext = "pdf";
+    const blobPath = buildEmpresaFileBlobPath(String(empresaUserId), String(fileId), ext);
+    try {
+      await uploadBufferToAzure(buf, "application/pdf", blobPath);
+    } catch (e) {
+      console.error(`[Muestras PDF] Fallo Azure al subir ${row.fileName}:`, e);
+      continue;
+    }
+    await db.collection(mongoColl.empresaFiles).insertOne({
+      _id: fileId,
+      empresaUserId,
+      title: row.title,
+      documentType: row.documentType,
+      description: row.description,
+      fileName: row.fileName,
+      mimeType: "application/pdf",
+      blobName: blobPath,
+      createdAt: ts,
+      updatedAt: ts,
+    });
+    cargados += 1;
+    console.log("[Muestras PDF] OK en sistema:", row.fileName);
+  }
+  if (cargados > 0) {
+    console.log(
+      `[Muestras PDF] ${cargados} documento(s) corporativo(s) en Mis archivos; los clientes pueden verlos/descargarlos.\n`
+    );
+  }
+}
 
 async function main() {
   const uri = process.env.MONGODB_URI;
@@ -44,6 +131,8 @@ async function main() {
   await db.collection(mongoColl.settings).deleteMany({});
   await db.collection(mongoColl.downloadLogs).deleteMany({});
   await db.collection(mongoColl.documentTemplates).deleteMany({});
+  await db.collection(mongoColl.empresaFiles).deleteMany({});
+  await db.collection(mongoColl.empresaFileDownloads).deleteMany({});
 
   await db.collection(mongoColl.users).createIndex({ email: 1 }, { unique: true });
   await db.collection(mongoColl.providers).createIndex({ ruc: 1 }, { unique: true });
@@ -55,8 +144,14 @@ async function main() {
   await db.collection(mongoColl.settings).createIndex({ key: 1 }, { unique: true });
   await db.collection(mongoColl.downloadLogs).createIndex({ userId: 1, documentId: 1 });
   await db.collection(mongoColl.documentTemplates).createIndex({ createdAt: -1 });
+  await db.collection(mongoColl.empresaFiles).createIndex({ empresaUserId: 1, createdAt: -1 });
+  await db.collection(mongoColl.empresaFileDownloads).createIndex({
+    userId: 1,
+    empresaFileId: 1,
+  });
 
   const now = new Date();
+  const demoDeadline = new Date("2026-12-31T12:00:00.000Z");
 
   await db.collection(mongoColl.providers).insertMany([
     {
@@ -118,6 +213,16 @@ async function main() {
       providerId: P2,
       createdAt: now,
     },
+    {
+      _id: U_CLIENTE,
+      email: "cliente@demo.com",
+      passwordHash: hash("cliente123"),
+      name: "Cliente Demo",
+      role: "cliente",
+      providerId: null,
+      empresaUserId: U_EMPRESA,
+      createdAt: now,
+    },
   ]);
 
   await db.collection(mongoColl.documents).insertMany([
@@ -130,7 +235,7 @@ async function main() {
       status: "pending",
       blobName: null,
       observations: null,
-      deadline: null,
+      deadline: demoDeadline,
       createdAt: now,
       updatedAt: now,
     },
@@ -143,7 +248,7 @@ async function main() {
       status: "uploaded",
       blobName: null,
       observations: null,
-      deadline: null,
+      deadline: demoDeadline,
       createdAt: now,
       updatedAt: now,
     },
@@ -156,7 +261,7 @@ async function main() {
       status: "approved",
       blobName: null,
       observations: null,
-      deadline: null,
+      deadline: demoDeadline,
       createdAt: now,
       updatedAt: now,
     },
@@ -170,7 +275,7 @@ async function main() {
       blobName: null,
       observations:
         "El documento está ilegible, por favor resubir en mejor calidad.",
-      deadline: null,
+      deadline: demoDeadline,
       createdAt: now,
       updatedAt: now,
     },
@@ -183,7 +288,7 @@ async function main() {
       status: "pending",
       blobName: null,
       observations: null,
-      deadline: null,
+      deadline: demoDeadline,
       createdAt: now,
       updatedAt: now,
     },
@@ -241,6 +346,8 @@ async function main() {
     },
   ]);
 
+  await seedMuestraPdfsEmpresa(db, U_EMPRESA, now);
+
   await client.close();
   console.log("Seed OK en base:", DB_NAME);
   console.log(
@@ -251,9 +358,22 @@ async function main() {
     mongoColl.notifications,
     mongoColl.settings,
     mongoColl.downloadLogs,
-    mongoColl.documentTemplates
+    mongoColl.documentTemplates,
+    mongoColl.empresaFiles,
+    mongoColl.empresaFileDownloads
   );
-  console.log("Usuarios: admin@demo.com, empresa@demo.com, prov1@demo.com, prov2@demo.com");
+  console.log(
+    "Usuarios: admin@demo.com, empresa@demo.com, cliente@demo.com, prov1@demo.com, prov2@demo.com"
+  );
+  console.log("\nInicia sesión en el navegador (http://localhost:3000/login), no en la terminal:");
+  console.log("  admin@demo.com      / admin123");
+  console.log("  empresa@demo.com    / empresa123");
+  console.log("  cliente@demo.com    / cliente123");
+  console.log("  prov1@demo.com      / prov123");
+  console.log("  prov2@demo.com      / prov456");
+  console.log(
+    "\nCon Azure configurado: npm run seed:demo regenera PDFs y los deja en Mis archivos (empresa demo).\n"
+  );
 }
 
 main().catch((e) => {

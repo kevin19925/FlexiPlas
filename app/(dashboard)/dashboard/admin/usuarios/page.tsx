@@ -7,7 +7,17 @@ import { useToast } from "@/components/ToastHost";
 import type { UserRole } from "@/lib/types";
 
 type Tab = "usuarios" | "limites";
-type U = { id: string; email: string; name: string; role: UserRole; providerName: string | null; maxDownloadsPerDocument: number | null };
+type U = {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  providerName: string | null;
+  empresaUserId: string | null;
+  empresaLinkedName: string | null;
+  empresaLinkedEmail: string | null;
+  maxDownloadsPerDocument: number | null;
+};
 type P = { id: string; name: string };
 
 function firstKey(keys: unknown): string {
@@ -22,7 +32,14 @@ export default function AdminUsuariosPage() {
   const [users, setUsers] = useState<U[]>([]);
   const [providers, setProviders] = useState<P[]>([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ email: "", password: "", name: "", role: "proveedor" as UserRole, providerId: "" });
+  const [form, setForm] = useState({
+    email: "",
+    password: "",
+    name: "",
+    role: "proveedor" as UserRole,
+    providerId: "",
+    empresaUserId: "",
+  });
   const [saving, setSaving] = useState(false);
   const [defaultMaxInput, setDefaultMaxInput] = useState("10");
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -38,6 +55,11 @@ export default function AdminUsuariosPage() {
       const d = (await ur.json()) as { users?: U[] };
       const list = d.users ?? [];
       setUsers(list);
+      const empresas = list.filter((u) => u.role === "empresa");
+      setForm((f) => ({
+        ...f,
+        empresaUserId: f.empresaUserId || empresas[0]?.id || "",
+      }));
       const edits: Record<string, string> = {};
       for (const u of list) edits[u.id] = u.maxDownloadsPerDocument === null ? "" : String(u.maxDownloadsPerDocument);
       setMaxEdits(edits);
@@ -46,7 +68,10 @@ export default function AdminUsuariosPage() {
       const d = (await pr.json()) as { providers?: P[] };
       const list = d.providers ?? [];
       setProviders(list);
-      setForm((f) => ({ ...f, providerId: f.providerId || list[0]?.id || "" }));
+      setForm((f) => ({
+        ...f,
+        providerId: f.providerId || list[0]?.id || "",
+      }));
     }
     if (sr.ok) {
       const d = (await sr.json()) as { defaultMaxDownloadsPerDocument?: number };
@@ -61,13 +86,26 @@ export default function AdminUsuariosPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const body: Record<string, unknown> = { email: form.email, password: form.password, name: form.name, role: form.role };
+      const body: Record<string, unknown> = {
+        email: form.email,
+        password: form.password,
+        name: form.name,
+        role: form.role,
+      };
       if (form.role === "proveedor") body.providerId = form.providerId;
+      if (form.role === "cliente") body.empresaUserId = form.empresaUserId;
       const r = await fetch("/api/users", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(body) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) return void toast((j as { error?: string }).error || "Error", "error");
       toast("Usuario creado", "success");
-      setForm({ email: "", password: "", name: "", role: "proveedor", providerId: providers[0]?.id ?? "" });
+      setForm((f) => ({
+        email: "",
+        password: "",
+        name: "",
+        role: "proveedor",
+        providerId: providers[0]?.id ?? "",
+        empresaUserId: f.empresaUserId,
+      }));
       void load();
     } finally { setSaving(false); }
   }
@@ -140,6 +178,7 @@ export default function AdminUsuariosPage() {
                   <SelectItem key="admin">admin</SelectItem>
                   <SelectItem key="empresa">empresa</SelectItem>
                   <SelectItem key="proveedor">proveedor</SelectItem>
+                  <SelectItem key="cliente">cliente</SelectItem>
                 </Select>
               </div>
               {form.role === "proveedor" && (
@@ -147,20 +186,43 @@ export default function AdminUsuariosPage() {
                   {providers.map((p) => <SelectItem key={p.id}>{p.name}</SelectItem>)}
                 </Select>
               )}
+              {form.role === "cliente" && (
+                <Select
+                  label="Empresa vinculada"
+                  labelPlacement="outside"
+                  selectedKeys={form.empresaUserId ? [form.empresaUserId] : []}
+                  onSelectionChange={(k) => setForm((f) => ({ ...f, empresaUserId: firstKey(k) }))}
+                  variant="bordered"
+                  description="El cliente verá los archivos corporativos de esta empresa."
+                >
+                  {users
+                    .filter((u) => u.role === "empresa")
+                    .map((e) => (
+                      <SelectItem key={e.id}>
+                        {e.name} ({e.email})
+                      </SelectItem>
+                    ))}
+                </Select>
+              )}
               <Button type="submit" color="secondary" isDisabled={saving}>{saving ? "Creando..." : "Crear"}</Button>
             </form>
           </CardBody></Card>
 
           <Card className="border border-default-200"><CardBody className="overflow-auto p-0">
-            <table className="w-full min-w-[900px] text-sm">
+            <table className="w-full min-w-[960px] text-sm">
               <thead className="bg-default-50"><tr>
-                <th className="px-3 py-2 text-left">Email</th><th className="px-3 py-2 text-left">Nombre</th><th className="px-3 py-2 text-left">Rol</th><th className="px-3 py-2 text-left">Proveedor</th><th className="px-3 py-2 text-left">Máx. desc./doc</th><th className="px-3 py-2 text-right">Acciones</th>
+                <th className="px-3 py-2 text-left">Email</th><th className="px-3 py-2 text-left">Nombre</th><th className="px-3 py-2 text-left">Rol</th><th className="px-3 py-2 text-left">Proveedor</th><th className="px-3 py-2 text-left">Empresa (cliente)</th><th className="px-3 py-2 text-left">Máx. desc./doc</th><th className="px-3 py-2 text-right">Acciones</th>
               </tr></thead>
               <tbody>
                 {users.map((u) => (
                   <tr key={u.id} className="border-t border-default-100">
                     <td className="px-3 py-2">{u.email}</td><td className="px-3 py-2">{u.name}</td><td className="px-3 py-2">{u.role}</td><td className="px-3 py-2">{u.providerName ?? "-"}</td>
-                    <td className="px-3 py-2">{(u.role === "empresa" || u.role === "proveedor") ? <div className="flex items-center gap-1"><Input size="sm" value={maxEdits[u.id] ?? ""} onValueChange={(v) => setMaxEdits((m) => ({ ...m, [u.id]: v }))} placeholder="defecto" className="max-w-[100px]" /><Button size="sm" variant="light" onPress={() => void saveUserMax(u.id)}>OK</Button></div> : "-"}</td>
+                    <td className="px-3 py-2 max-w-[220px]">
+                      {u.role === "cliente" && u.empresaLinkedName
+                        ? `${u.empresaLinkedName} (${u.empresaLinkedEmail ?? ""})`
+                        : "-"}
+                    </td>
+                    <td className="px-3 py-2">{(u.role === "empresa" || u.role === "proveedor" || u.role === "cliente") ? <div className="flex items-center gap-1"><Input size="sm" value={maxEdits[u.id] ?? ""} onValueChange={(v) => setMaxEdits((m) => ({ ...m, [u.id]: v }))} placeholder="defecto" className="max-w-[100px]" /><Button size="sm" variant="light" onPress={() => void saveUserMax(u.id)}>OK</Button></div> : "-"}</td>
                     <td className="px-3 py-2 text-right"><Button size="sm" color="danger" variant="light" onPress={() => void removeUser(u.id)}>Eliminar</Button></td>
                   </tr>
                 ))}

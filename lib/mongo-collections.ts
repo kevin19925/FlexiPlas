@@ -35,4 +35,10 @@ export const mongoColl = {
   get documentTemplates() {
     return envName("MONGODB_COLL_DOCUMENT_TEMPLATES", "document_templates");
   },
+  get empresaFiles() {
+    return envName("MONGODB_COLL_EMPRESA_FILES", "empresa_files");
+  },
+  get empresaFileDownloads() {
+    return envName("MONGODB_COLL_EMPRESA_FILE_DOWNLOADS", "empresa_file_downloads");
+  },
 };

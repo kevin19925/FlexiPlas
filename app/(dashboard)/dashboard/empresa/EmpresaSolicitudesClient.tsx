@@ -27,9 +27,28 @@ function firstKeyToValue(keys: unknown): string {
   return arr[0] ? String(arr[0]) : "";
 }
 
+function todayIsoLocal(): string {
+  const t = new Date();
+  const y = t.getFullYear();
+  const m = String(t.getMonth() + 1).padStart(2, "0");
+  const d = String(t.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function matchesProviderSearch(p: Provider, q: string): boolean {
+  const t = q.trim().toLowerCase();
+  if (!t) return true;
+  const digits = t.replace(/\D/g, "");
+  const rucDigits = (p.ruc || "").replace(/\D/g, "");
+  return (
+    p.name.toLowerCase().includes(t) ||
+    (p.ruc && p.ruc.toLowerCase().includes(t)) ||
+    (digits.length > 0 && rucDigits.includes(digits))
+  );
+}
+
 export function EmpresaSolicitudesClient() {
   const toast = useToast();
-  const [providers, setProviders] = useState<Provider[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [scope, setScope] = useState<"one" | "selected" | "all">("one");
@@ -44,37 +63,46 @@ export function EmpresaSolicitudesClient() {
 
   const loadAllProviders = useCallback(async () => {
     const res = await fetch("/api/providers", { credentials: "include" });
-    if (!res.ok) return;
-    const data = (await res.json()) as { providers?: Provider[] };
-    setAllProviders(data.providers ?? []);
-  }, []);
-
-  const loadProviders = useCallback(async () => {
-    const q = new URLSearchParams();
-    if (search.trim()) q.set("q", search.trim());
-    const res = await fetch(`/api/providers?${q}`, { credentials: "include" });
-    if (!res.ok) return;
+    if (!res.ok) {
+      setLoading(false);
+      return;
+    }
     const data = (await res.json()) as { providers?: Provider[] };
     const list = data.providers ?? [];
-    setProviders(list);
-    setProviderId((prev) => (prev && list.some((p) => p.id === prev) ? prev : list[0]?.id ?? ""));
+    setAllProviders(list);
     setLoading(false);
-  }, [search]);
-
-  useEffect(() => {
-    void loadProviders();
-  }, [loadProviders]);
+  }, []);
 
   useEffect(() => {
     void loadAllProviders();
   }, [loadAllProviders]);
 
+  const filteredProviders = useMemo(() => {
+    const q = search.trim();
+    let list = allProviders.filter((p) => matchesProviderSearch(p, q));
+    if (providerId && !list.some((p) => p.id === providerId)) {
+      const sel = allProviders.find((p) => p.id === providerId);
+      if (sel) list = [sel, ...list];
+    }
+    return list;
+  }, [allProviders, search, providerId]);
+
+  useEffect(() => {
+    if (!allProviders.length) return;
+    if (providerId && allProviders.some((p) => p.id === providerId)) return;
+    setProviderId(allProviders[0]?.id ?? "");
+  }, [allProviders, providerId]);
+
   const filledItems = useMemo(
-    () => rows.map((r) => ({ documentType: r.documentType.trim(), description: r.description.trim() })).filter((r) => r.documentType && r.description),
+    () =>
+      rows
+        .map((r) => ({
+          documentType: r.documentType.trim(),
+          description: r.description.trim(),
+        }))
+        .filter((r) => r.documentType && r.description),
     [rows]
   );
-
-  const deadlineApplies = filledItems.length === 1;
 
   function applySuggestedType(t: string) {
     setRows((prev) => {
@@ -96,12 +124,21 @@ export function EmpresaSolicitudesClient() {
       setFormError("Marca al menos un proveedor");
       return;
     }
-    if (scope === "one" && (!providerId || providers.length === 0)) {
+    if (scope === "one" && (!providerId || !allProviders.some((p) => p.id === providerId))) {
       setFormError("Elige un proveedor");
       return;
     }
     if (scope === "all" && allProviders.length === 0) {
       setFormError("No hay proveedores registrados");
+      return;
+    }
+    if (!deadline.trim()) {
+      setFormError("La fecha límite es obligatoria");
+      return;
+    }
+    const ds = deadline.trim().slice(0, 10);
+    if (ds < todayIsoLocal()) {
+      setFormError("La fecha límite no puede ser anterior a hoy");
       return;
     }
 
@@ -112,8 +149,8 @@ export function EmpresaSolicitudesClient() {
           documentType: filledItems[0].documentType,
           description: filledItems[0].description,
           year,
+          deadline: ds,
         };
-        if (deadlineApplies && deadline) body.deadline = deadline;
         if (scope === "all") body.applyToAllProviders = true;
         else if (scope === "selected") body.providerIds = selectedIds;
         else body.providerId = providerId;
@@ -132,8 +169,7 @@ export function EmpresaSolicitudesClient() {
         const n = (data as { createdCount?: number }).createdCount ?? 1;
         toast(n === 1 ? "Solicitud creada correctamente" : `Creadas ${n} solicitudes`, "success");
       } else {
-        if (deadline) toast("Con varias filas no se aplica fecha límite.", "info");
-        const payload: Record<string, unknown> = { year, items: filledItems };
+        const payload: Record<string, unknown> = { year, items: filledItems, deadline: ds };
         if (scope === "all") payload.applyToAllProviders = true;
         else if (scope === "selected") payload.providerIds = selectedIds;
         else payload.providerId = providerId;
@@ -160,7 +196,7 @@ export function EmpresaSolicitudesClient() {
     }
   }
 
-  if (loading && !providers.length) {
+  if (loading && !allProviders.length) {
     return (
       <div className="space-y-2">
         <Skeleton className="h-8 w-[200px] rounded-lg" />
@@ -171,14 +207,17 @@ export function EmpresaSolicitudesClient() {
 
   const submitDisabled =
     saving ||
-    (scope === "one" && (!providerId || providers.length === 0)) ||
+    !deadline.trim() ||
+    (scope === "one" && (!providerId || allProviders.length === 0)) ||
     ((scope === "selected" || scope === "all") && allProviders.length === 0);
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-3xl font-extrabold text-primary">Solicitudes</h1>
-        <p className="text-default-500">Crea una o varias solicitudes con mejor experiencia visual.</p>
+        <p className="text-default-500">
+          Indica siempre una fecha límite: los proveedores reciben un aviso para subir la documentación a tiempo.
+        </p>
       </div>
 
       <Card className="border border-default-200">
@@ -186,7 +225,11 @@ export function EmpresaSolicitudesClient() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <p className="mb-2 text-sm font-semibold">¿A quién va dirigido?</p>
-              <RadioGroup orientation="horizontal" value={scope} onValueChange={(v) => setScope(v as "one" | "selected" | "all") }>
+              <RadioGroup
+                orientation="horizontal"
+                value={scope}
+                onValueChange={(v) => setScope(v as "one" | "selected" | "all")}
+              >
                 <Radio value="one">Un proveedor</Radio>
                 <Radio value="selected">Varios proveedores</Radio>
                 <Radio value="all">Todos los proveedores</Radio>
@@ -194,19 +237,44 @@ export function EmpresaSolicitudesClient() {
             </div>
 
             {scope === "one" && (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <Input label="Buscar proveedor" labelPlacement="outside" value={search} onValueChange={setSearch} placeholder="Nombre o RUC" variant="bordered" />
-                <Select
-                  label="Proveedor"
+              <div className="flex flex-col gap-3">
+                <Input
+                  label="Buscar proveedor"
                   labelPlacement="outside"
-                  selectedKeys={providerId ? [providerId] : []}
-                  onSelectionChange={(keys) => setProviderId(firstKeyToValue(keys))}
+                  value={search}
+                  onValueChange={setSearch}
+                  placeholder="Nombre o RUC"
+                  description="Filtra la lista; no quita el proveedor ya elegido."
                   variant="bordered"
-                >
-                  {providers.map((p) => (
-                    <SelectItem key={p.id}>{p.name} - {p.ruc}</SelectItem>
-                  ))}
-                </Select>
+                />
+                {/* select nativo: NextUI Select a veces deja el trigger vacío con opciones dinámicas */}
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="solicitud-proveedor" className="text-sm font-semibold text-primary">
+                    Proveedor
+                  </label>
+                  <select
+                    id="solicitud-proveedor"
+                    className="h-14 w-full rounded-medium border-2 border-default-200 bg-background px-3 text-small text-foreground shadow-sm outline-none transition-colors hover:border-default-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    value={providerId}
+                    onChange={(e) => setProviderId(e.target.value)}
+                    aria-label="Proveedor"
+                  >
+                    {!filteredProviders.length ? (
+                      <option value="">Sin coincidencias</option>
+                    ) : (
+                      <>
+                        <option value="" disabled>
+                          Selecciona un proveedor
+                        </option>
+                        {filteredProviders.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} — {p.ruc}
+                          </option>
+                        ))}
+                      </>
+                    )}
+                  </select>
+                </div>
               </div>
             )}
 
@@ -253,12 +321,14 @@ export function EmpresaSolicitudesClient() {
                 ))}
               </Select>
               <Input
-                label="Fecha límite (opcional)"
+                label="Fecha límite"
                 labelPlacement="outside"
                 type="date"
+                isRequired
                 value={deadline}
                 onValueChange={setDeadline}
-                isDisabled={!deadlineApplies}
+                min={todayIsoLocal()}
+                description="Obligatoria. Se incluye en la notificación al proveedor."
                 variant="bordered"
               />
             </div>

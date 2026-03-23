@@ -28,12 +28,24 @@ const links: Record<SessionUser["role"], NavLink[]> = {
       activeMatch: (p) => p === "/dashboard/empresa/archivos",
     },
     {
+      href: "/dashboard/empresa/mis-archivos",
+      label: "Mis archivos",
+      activeMatch: (p) => p.startsWith("/dashboard/empresa/mis-archivos"),
+    },
+    {
       href: "/dashboard/empresa/configuraciones",
       label: "Configuraciones",
       activeMatch: (p) => p.startsWith("/dashboard/empresa/configuraciones"),
     },
   ],
   proveedor: [{ href: "/dashboard/proveedor", label: "Mis documentos" }],
+  cliente: [
+    {
+      href: "/dashboard/cliente",
+      label: "Archivos de la empresa",
+      activeMatch: (p) => p.startsWith("/dashboard/cliente"),
+    },
+  ],
   admin: [
     { href: "/dashboard/admin", label: "Estadísticas" },
     { href: "/dashboard/admin/proveedores", label: "Proveedores" },

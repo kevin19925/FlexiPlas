@@ -91,3 +91,13 @@ export function buildBlobPath(
   const safeExt = ext.replace(/[^a-z0-9]/gi, "").slice(0, 5) || "bin";
   return `${providerId}/${documentId}/${Date.now()}-${randomUUID()}.${safeExt}`;
 }
+
+/** Archivos corporativos subidos por la empresa (RUC, pólizas, etc.). */
+export function buildEmpresaFileBlobPath(
+  empresaUserId: string,
+  fileId: string,
+  ext: string
+): string {
+  const safeExt = ext.replace(/[^a-z0-9]/gi, "").slice(0, 5) || "bin";
+  return `empresa/${empresaUserId}/${fileId}.${safeExt}`;
+}

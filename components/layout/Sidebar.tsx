@@ -38,6 +38,10 @@ const proveedorLinks: NavLink[] = [
   { label: "Mis Documentos", href: "/dashboard/proveedor", icon: FolderArchive },
 ];
 
+const clienteLinks: NavLink[] = [
+  { label: "Archivos de la empresa", href: "/dashboard/cliente", icon: FileText },
+];
+
 interface SidebarProps {
   user: SessionUser;
   open?: boolean;
@@ -51,18 +55,21 @@ export default function Sidebar({ user, open, onClose }: SidebarProps) {
   let links: NavLink[] = [];
   if (user.role === "admin") links = adminLinks;
   else if (user.role === "empresa") links = empresaLinks;
+  else if (user.role === "cliente") links = clienteLinks;
   else links = proveedorLinks;
 
   const roleLabel = {
     admin: "Administrador",
     empresa: "Empresa",
     proveedor: "Proveedor",
+    cliente: "Cliente",
   }[user.role];
 
   const roleColor = {
     admin: "bg-purple-500",
     empresa: "bg-blue-500",
     proveedor: "bg-emerald-500",
+    cliente: "bg-amber-500",
   }[user.role];
 
   async function handleLogout() {

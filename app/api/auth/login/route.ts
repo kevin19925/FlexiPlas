@@ -26,6 +26,7 @@ export async function POST(request: Request) {
           name: 1,
           role: 1,
           providerId: 1,
+          empresaUserId: 1,
           passwordHash: 1,
         },
       }
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
             name: 1,
             role: 1,
             providerId: 1,
+            empresaUserId: 1,
             passwordHash: 1,
           },
         }
@@ -66,6 +68,9 @@ export async function POST(request: Request) {
       name: user.name,
       role: user.role,
       ...(user.providerId ? { providerId: String(user.providerId) } : {}),
+      ...(user.empresaUserId
+        ? { empresaUserId: String(user.empresaUserId) }
+        : {}),
     };
 
     const token = await signSessionToken(session);
