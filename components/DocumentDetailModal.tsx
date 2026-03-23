@@ -18,10 +18,16 @@ type Props = {
   doc: DocumentRequest | null;
   onClose: () => void;
   role: "admin" | "empresa" | "proveedor";
+  /** Cuando el documento está en revisión, la empresa puede aprobar o solicitar rechazo (observación en modal aparte). */
+  empresaModeration?: {
+    onApprove: () => void | Promise<void>;
+    onRejectRequest: () => void;
+  };
 };
 
-export function DocumentDetailModal({ doc, onClose, role }: Props) {
+export function DocumentDetailModal({ doc, onClose, role, empresaModeration }: Props) {
   const [busy, setBusy] = useState(false);
+  const [approveBusy, setApproveBusy] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
   if (!doc) return null;
   const d = doc;
@@ -86,7 +92,28 @@ export function DocumentDetailModal({ doc, onClose, role }: Props) {
               </p>
             )}
           </ModalBody>
-          <ModalFooter>
+          <ModalFooter className="flex-wrap gap-2">
+            {role === "empresa" &&
+              d.status === "uploaded" &&
+              d.hasFile &&
+              empresaModeration && (
+                <>
+                  <Button
+                    color="success"
+                    className="font-bold text-white"
+                    isDisabled={approveBusy}
+                    onPress={() => {
+                      setApproveBusy(true);
+                      void Promise.resolve(empresaModeration.onApprove()).finally(() => setApproveBusy(false));
+                    }}
+                  >
+                    {approveBusy ? "…" : "Aprobar"}
+                  </Button>
+                  <Button color="danger" variant="flat" onPress={empresaModeration.onRejectRequest}>
+                    Rechazar
+                  </Button>
+                </>
+              )}
             {d.hasFile && (
               <>
                 <Button color="primary" startContent={<Eye className="h-4 w-4" />} onPress={() => setViewerOpen(true)}>

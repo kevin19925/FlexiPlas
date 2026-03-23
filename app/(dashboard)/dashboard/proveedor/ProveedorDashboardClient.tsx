@@ -55,10 +55,32 @@ export function ProveedorDashboardClient() {
       <h1 className="text-3xl font-extrabold">Mis documentos</h1>
       <p className="text-sm text-default-500">Archivos pendientes para subir/corregir este anio y Mis archivos para historial completo.</p>
 
-      <div className="flex gap-2">
-        <Button variant={mainTab === "pendientes" ? "solid" : "bordered"} color={mainTab === "pendientes" ? "secondary" : "default"} onPress={() => setMainTab("pendientes")}>Archivos pendientes ({pendientesCount})</Button>
-        <Button variant={mainTab === "misArchivos" ? "solid" : "bordered"} color={mainTab === "misArchivos" ? "primary" : "default"} onPress={() => setMainTab("misArchivos")}>Mis archivos</Button>
-      </div>
+      <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
+        <Card className="border border-default-200 lg:sticky lg:top-20">
+          <CardBody className="gap-2 p-3">
+            <p className="px-1 text-xs font-bold uppercase tracking-[0.12em] text-default-500">Menú</p>
+            <Button
+              fullWidth
+              className="justify-start"
+              variant={mainTab === "pendientes" ? "solid" : "light"}
+              color={mainTab === "pendientes" ? "secondary" : "default"}
+              onPress={() => setMainTab("pendientes")}
+            >
+              Archivos pendientes ({pendientesCount})
+            </Button>
+            <Button
+              fullWidth
+              className="justify-start"
+              variant={mainTab === "misArchivos" ? "solid" : "light"}
+              color={mainTab === "misArchivos" ? "primary" : "default"}
+              onPress={() => setMainTab("misArchivos")}
+            >
+              Mis archivos
+            </Button>
+          </CardBody>
+        </Card>
+
+        <div className="space-y-3">
 
       {mainTab === "pendientes" && (
         <div className="space-y-3">
@@ -116,6 +138,8 @@ export function ProveedorDashboardClient() {
           </CardBody></Card>
         </div>
       )}
+        </div>
+      </div>
 
       <Modal isOpen={Boolean(uploadDoc)} onOpenChange={(open) => !open && setUploadDoc(null)} size="2xl">
         <ModalContent>

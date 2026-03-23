@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Sidebar from "@/components/layout/Sidebar";
 import Navbar from "@/components/layout/Navbar";
 import type { SessionUser } from "@/lib/types";
@@ -12,6 +12,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -50,6 +51,12 @@ export default function DashboardLayout({
     EMPRESA: "Panel Empresa",
     PROVEEDOR: "Mis Documentos",
   }[user.role];
+
+  // Routes under /dashboard have their own blue shell layout.
+  // Skip this legacy dark shell there to avoid duplicated sidebars.
+  if (pathname.startsWith("/dashboard")) {
+    return <>{children}</>;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">

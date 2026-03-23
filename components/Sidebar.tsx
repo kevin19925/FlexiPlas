@@ -25,9 +25,12 @@ const links: Record<SessionUser["role"], NavLink[]> = {
     {
       href: "/dashboard/empresa/archivos",
       label: "Gestión de archivos",
-      activeMatch: (p) =>
-        p === "/dashboard/empresa/archivos" ||
-        p.startsWith("/dashboard/empresa/proveedor/"),
+      activeMatch: (p) => p === "/dashboard/empresa/archivos",
+    },
+    {
+      href: "/dashboard/empresa/configuraciones",
+      label: "Configuraciones",
+      activeMatch: (p) => p.startsWith("/dashboard/empresa/configuraciones"),
     },
   ],
   proveedor: [{ href: "/dashboard/proveedor", label: "Mis documentos" }],

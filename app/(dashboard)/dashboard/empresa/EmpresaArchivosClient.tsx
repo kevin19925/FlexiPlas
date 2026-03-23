@@ -1,11 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { Button, Card, CardBody, Input, Select, SelectItem, Skeleton } from "@nextui-org/react";
-import { Eye } from "lucide-react";
+import {
+  Button,
+  Card,
+  CardBody,
+  Input,
+  Select,
+  SelectItem,
+  Skeleton,
+} from "@nextui-org/react";
+import { Check, Eye } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DocumentDetailModal } from "@/components/DocumentDetailModal";
 import { DocumentViewerModal } from "@/components/DocumentViewerModal";
+import { RejectModal } from "@/components/RejectModal";
 import { StatusBadge } from "@/components/StatusBadge";
 import type { DocumentRequest, DocumentStatus, Provider } from "@/lib/types";
 
@@ -25,6 +34,8 @@ export function EmpresaArchivosClient() {
   const [q, setQ] = useState("");
   const [detailDoc, setDetailDoc] = useState<DocumentRequest | null>(null);
   const [previewDoc, setPreviewDoc] = useState<DocumentRequest | null>(null);
+  const [rejectId, setRejectId] = useState<string | null>(null);
+  const [rowBusyId, setRowBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [pr, dr] = await Promise.all([
@@ -73,6 +84,39 @@ export function EmpresaArchivosClient() {
     });
   }, [documents, filterProviderId, yearFilter, statusFilter, q]);
 
+  async function approve(id: string) {
+    setRowBusyId(id);
+    try {
+      const r = await fetch(`/api/documents/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ action: "approve" }),
+      });
+      if (r.ok) await load();
+    } finally {
+      setRowBusyId(null);
+    }
+  }
+
+  async function reject(id: string, observations: string) {
+    setRowBusyId(id);
+    try {
+      const r = await fetch(`/api/documents/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ action: "reject", observations }),
+      });
+      if (r.ok) {
+        setRejectId(null);
+        await load();
+      }
+    } finally {
+      setRowBusyId(null);
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-2">
@@ -86,19 +130,11 @@ export function EmpresaArchivosClient() {
     <div className="space-y-4">
       <div>
         <h1 className="text-3xl font-extrabold text-primary">Gestión de archivos</h1>
-        <p className="text-default-500">Filtra, revisa y abre expedientes por proveedor con una vista más rápida.</p>
+        <p className="text-sm text-default-500">
+          Lista por proveedor con filtros. Revisa, aprueba o rechaza envíos en revisión; al rechazar debes indicar el motivo
+          (mínimo 5 caracteres). La vista previa no consume descargas.
+        </p>
       </div>
-
-      <Card className="border border-default-200">
-        <CardBody>
-          <p className="mb-1 font-semibold">Cómo funciona el acceso</p>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-default-500">
-            <li><strong>Vista previa</strong> no consume descargas.</li>
-            <li><strong>Descargar</strong> sí consume descargas por archivo.</li>
-            <li>Los enlaces temporales de Azure caducan (~60 min).</li>
-          </ul>
-        </CardBody>
-      </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_1fr]">
         <Card className="border border-default-200">
@@ -128,7 +164,8 @@ export function EmpresaArchivosClient() {
                   >
                     <p className="text-sm font-semibold">{p.name}</p>
                     <p className={`text-xs ${active ? "text-white/80" : "text-default-500"}`}>
-                      Pend {s?.pending ?? 0} · Sub {s?.uploaded ?? 0} · Apr {s?.approved ?? 0} · Rec {s?.rejected ?? 0}
+                      RUC {p.ruc} · Pend {s?.pending ?? 0} · Rev {s?.uploaded ?? 0} · Apr {s?.approved ?? 0} · Rec{" "}
+                      {s?.rejected ?? 0}
                     </p>
                   </button>
                 );
@@ -168,7 +205,7 @@ export function EmpresaArchivosClient() {
                 variant="bordered"
               >
                 <SelectItem key="pending">Pendiente</SelectItem>
-                <SelectItem key="uploaded">Subido</SelectItem>
+                <SelectItem key="uploaded">En revisión</SelectItem>
                 <SelectItem key="approved">Aprobado</SelectItem>
                 <SelectItem key="rejected">Rechazado</SelectItem>
               </Select>
@@ -177,7 +214,7 @@ export function EmpresaArchivosClient() {
 
           <Card className="border border-default-200">
             <CardBody className="overflow-auto p-0">
-              <table className="w-full min-w-[860px] text-sm">
+              <table className="w-full min-w-[980px] text-sm">
                 <thead className="bg-default-50 text-default-600">
                   <tr>
                     <th className="px-3 py-2 text-left">Documento</th>
@@ -190,33 +227,70 @@ export function EmpresaArchivosClient() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredDocs.map((d) => (
-                    <tr key={d.id} className="border-t border-default-100">
-                      <td className="px-3 py-2">
-                        <p className="font-semibold">{d.documentType}</p>
-                        <p className="text-xs text-default-500">{d.description}</p>
-                      </td>
-                      <td className="px-3 py-2">{d.providerName}</td>
-                      <td className="px-3 py-2">{d.year}</td>
-                      <td className="px-3 py-2"><StatusBadge status={d.status} /></td>
-                      <td className="px-3 py-2">{d.hasFile ? "Sí" : "-"}</td>
-                      <td className="px-3 py-2 text-center">
-                        {d.hasFile ? (
-                          <Button isIconOnly size="sm" variant="light" color="primary" onPress={() => setPreviewDoc(d)}>
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button size="sm" variant="light" onPress={() => setDetailDoc(d)}>Detalle</Button>
-                          <Button as={Link} size="sm" variant="bordered" href={`/dashboard/empresa/proveedor/${d.providerId}`}>
-                            Ficha
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredDocs.map((d) => {
+                    const canModerate = d.status === "uploaded" && d.hasFile;
+                    const busy = rowBusyId === d.id;
+                    return (
+                      <tr key={d.id} className="border-t border-default-100">
+                        <td className="px-3 py-2">
+                          <p className="font-semibold">{d.documentType}</p>
+                          <p className="text-xs text-default-500">{d.description}</p>
+                        </td>
+                        <td className="px-3 py-2">{d.providerName}</td>
+                        <td className="px-3 py-2">{d.year}</td>
+                        <td className="px-3 py-2">
+                          <StatusBadge status={d.status} />
+                        </td>
+                        <td className="px-3 py-2">{d.hasFile ? "Sí" : "-"}</td>
+                        <td className="px-3 py-2 text-center">
+                          {d.hasFile ? (
+                            <Button
+                              isIconOnly
+                              size="sm"
+                              variant="light"
+                              color="primary"
+                              onPress={() => setPreviewDoc(d)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <div className="flex flex-wrap justify-end gap-1">
+                            {canModerate && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  color="success"
+                                  className="min-w-0 font-bold text-white"
+                                  isDisabled={busy}
+                                  startContent={<Check className="h-3.5 w-3.5" />}
+                                  onPress={() => void approve(d.id)}
+                                >
+                                  Aprobar
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  color="danger"
+                                  variant="flat"
+                                  isDisabled={busy}
+                                  onPress={() => setRejectId(d.id)}
+                                >
+                                  Rechazar
+                                </Button>
+                              </>
+                            )}
+                            <Button size="sm" variant="light" onPress={() => setDetailDoc(d)}>
+                              Detalle
+                            </Button>
+                            <Button as={Link} size="sm" variant="bordered" href={`/dashboard/empresa/proveedor/${d.providerId}`}>
+                              Expediente
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {filteredDocs.length === 0 && (
                     <tr>
                       <td colSpan={7} className="px-3 py-8 text-center text-default-500">
@@ -231,7 +305,36 @@ export function EmpresaArchivosClient() {
         </div>
       </div>
 
-      {detailDoc && <DocumentDetailModal doc={detailDoc} role="empresa" onClose={() => setDetailDoc(null)} />}
+      <RejectModal
+        open={rejectId !== null}
+        onClose={() => setRejectId(null)}
+        onConfirm={(obs) => {
+          if (rejectId) void reject(rejectId, obs);
+        }}
+      />
+
+      {detailDoc && (
+        <DocumentDetailModal
+          doc={detailDoc}
+          role="empresa"
+          onClose={() => setDetailDoc(null)}
+          empresaModeration={
+            detailDoc.status === "uploaded" && detailDoc.hasFile
+              ? {
+                  onApprove: async () => {
+                    await approve(detailDoc.id);
+                    setDetailDoc(null);
+                  },
+                  onRejectRequest: () => {
+                    setRejectId(detailDoc.id);
+                    setDetailDoc(null);
+                  },
+                }
+              : undefined
+          }
+        />
+      )}
+
       {previewDoc && previewDoc.hasFile && (
         <DocumentViewerModal
           documentId={previewDoc.id}

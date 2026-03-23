@@ -9,16 +9,49 @@ import type { SessionUser } from "@/lib/types";
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => null);
-    const email = typeof body?.email === "string" ? body.email.trim() : "";
+    const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
     const password = typeof body?.password === "string" ? body.password : "";
     if (!email || !password) {
       return NextResponse.json({ error: "Datos incompletos" }, { status: 400 });
     }
 
     const db = await getDb();
-    const user = await db.collection(mongoColl.users).findOne({
-      email: { $regex: new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
-    });
+    // Fast path: exact match uses index on email.
+    let user = await db.collection(mongoColl.users).findOne(
+      { email },
+      {
+        projection: {
+          _id: 1,
+          email: 1,
+          name: 1,
+          role: 1,
+          providerId: 1,
+          passwordHash: 1,
+        },
+      }
+    );
+
+    // Backward compatibility for any legacy records with mixed-case email.
+    if (!user) {
+      user = await db.collection(mongoColl.users).findOne(
+        {
+          email: {
+            $regex: new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"),
+          },
+        },
+        {
+          projection: {
+            _id: 1,
+            email: 1,
+            name: 1,
+            role: 1,
+            providerId: 1,
+            passwordHash: 1,
+          },
+        }
+      );
+    }
+
     if (!user || typeof user.passwordHash !== "string") {
       return NextResponse.json({ error: "Credenciales inválidas" }, { status: 401 });
     }

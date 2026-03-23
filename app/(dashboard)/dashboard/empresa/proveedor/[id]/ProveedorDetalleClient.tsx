@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Button, Card, CardBody, Input, Select, SelectItem, Spinner } from "@nextui-org/react";
+import { Button, Card, CardBody, Select, SelectItem, Spinner } from "@nextui-org/react";
 import { ArrowLeft } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DocumentCard } from "@/components/DocumentCard";
@@ -27,15 +27,11 @@ export function ProveedorDetalleClient({ providerId }: { providerId: string }) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [detailDoc, setDetailDoc] = useState<DocumentRequest | null>(null);
-  const [downloadLimitInput, setDownloadLimitInput] = useState("");
-  const [downloadLimitSaving, setDownloadLimitSaving] = useState(false);
-  const [downloadLimitDefault, setDownloadLimitDefault] = useState<number | null>(null);
 
   const load = useCallback(async () => {
-    const [pr, dr, qr] = await Promise.all([
+    const [pr, dr] = await Promise.all([
       fetch(`/api/providers/${providerId}`, { credentials: "include" }),
       fetch("/api/documents", { credentials: "include" }),
-      fetch(`/api/providers/${providerId}/download-policy`, { credentials: "include" }),
     ]);
     if (pr.ok) {
       const pj = (await pr.json()) as { provider?: Provider };
@@ -44,19 +40,6 @@ export function ProveedorDetalleClient({ providerId }: { providerId: string }) {
     if (dr.ok) {
       const dj = (await dr.json()) as { documents?: DocumentRequest[] };
       setDocuments(dj.documents ?? []);
-    }
-    if (qr.ok) {
-      const qj = (await qr.json()) as {
-        users?: { maxDownloadsPerDocument: number | null }[];
-        defaultMaxDownloadsPerDocument?: number;
-      };
-      const first = qj.users?.[0]?.maxDownloadsPerDocument ?? null;
-      setDownloadLimitInput(first === null ? "" : String(first));
-      setDownloadLimitDefault(
-        typeof qj.defaultMaxDownloadsPerDocument === "number"
-          ? qj.defaultMaxDownloadsPerDocument
-          : null
-      );
     }
     setLoading(false);
   }, [providerId]);
@@ -95,37 +78,6 @@ export function ProveedorDetalleClient({ providerId }: { providerId: string }) {
     void load();
   }
 
-  async function saveDownloadPolicy() {
-    const raw = downloadLimitInput.trim();
-    let value: number | null = null;
-    if (raw !== "") {
-      const n = Number(raw);
-      if (!Number.isFinite(n) || n < -1 || n > 9999) {
-        alert("Usa un número entre -1 y 9999, o deja vacío para heredar.");
-        return;
-      }
-      value = Math.floor(n);
-    }
-
-    setDownloadLimitSaving(true);
-    try {
-      const r = await fetch(`/api/providers/${providerId}/download-policy`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ maxDownloadsPerDocument: value }),
-      });
-      const j = (await r.json().catch(() => ({}))) as { error?: string };
-      if (!r.ok) {
-        alert(j.error || "No se pudo guardar la política de descargas");
-        return;
-      }
-      await load();
-    } finally {
-      setDownloadLimitSaving(false);
-    }
-  }
-
   if (loading) {
     return <div className="flex justify-center py-10"><Spinner /></div>;
   }
@@ -156,6 +108,13 @@ export function ProveedorDetalleClient({ providerId }: { providerId: string }) {
         </Button>
         <h1 className="text-3xl font-extrabold text-primary">{provider.name}</h1>
         <p className="text-default-500">RUC {provider.ruc}</p>
+        <p className="mt-2 text-sm text-default-500">
+          Límites de descarga y acciones masivas por proveedor están en{" "}
+          <Link href="/dashboard/empresa/configuraciones" className="font-semibold text-secondary underline">
+            Configuraciones
+          </Link>
+          .
+        </p>
       </div>
 
       <Card className="border border-default-200">
@@ -163,39 +122,6 @@ export function ProveedorDetalleClient({ providerId }: { providerId: string }) {
           <h2 className="mb-1 text-lg font-semibold">Tabla de trazabilidad</h2>
           <p className="mb-3 text-sm text-default-500">Clic en una celda con documento para ver detalle.</p>
           <TraceabilityTable documents={mine} onCellClick={(d) => setDetailDoc(d)} />
-        </CardBody>
-      </Card>
-
-      <Card className="border border-default-200">
-        <CardBody className="space-y-3">
-          <h2 className="text-lg font-semibold">Política de acceso (empresa)</h2>
-          <p className="text-sm text-default-500">
-            Desde aquí defines cuántas descargas por archivo tendrá este proveedor. La
-            vista previa en pantalla no consume descargas.
-          </p>
-          <div className="flex flex-wrap items-end gap-2">
-            <Input
-              label="Máx. descargas por archivo"
-              labelPlacement="outside"
-              placeholder="Vacío = hereda"
-              description={
-                downloadLimitDefault === null
-                  ? "Global actual: ilimitado. Usa -1 para ilimitado."
-                  : `Global actual: ${downloadLimitDefault}. Usa -1 para ilimitado.`
-              }
-              className="w-full sm:max-w-[320px]"
-              value={downloadLimitInput}
-              onValueChange={setDownloadLimitInput}
-              variant="bordered"
-            />
-            <Button
-              color="secondary"
-              onPress={() => void saveDownloadPolicy()}
-              isDisabled={downloadLimitSaving}
-            >
-              {downloadLimitSaving ? "Guardando..." : "Guardar política"}
-            </Button>
-          </div>
         </CardBody>
       </Card>
 
@@ -260,7 +186,27 @@ export function ProveedorDetalleClient({ providerId }: { providerId: string }) {
         }}
       />
 
-      {detailDoc && <DocumentDetailModal doc={detailDoc} role="empresa" onClose={() => setDetailDoc(null)} />}
+      {detailDoc && (
+        <DocumentDetailModal
+          doc={detailDoc}
+          role="empresa"
+          onClose={() => setDetailDoc(null)}
+          empresaModeration={
+            detailDoc.status === "uploaded" && detailDoc.hasFile
+              ? {
+                  onApprove: async () => {
+                    await approve(detailDoc.id);
+                    setDetailDoc(null);
+                  },
+                  onRejectRequest: () => {
+                    setRejectId(detailDoc.id);
+                    setDetailDoc(null);
+                  },
+                }
+              : undefined
+          }
+        />
+      )}
     </div>
   );
 }
